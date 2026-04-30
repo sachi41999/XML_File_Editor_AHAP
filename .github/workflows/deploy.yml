@@ -29,10 +29,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # Removed cache: 'npm' — package-lock.json not required
 
       - name: Install dependencies
         run: npm install
+
+      - name: Install Angular CLI
+        run: npm install -g @angular/cli@19
 
       - name: Build Angular app
         run: npx ng build --configuration production --base-href "/XML_File_Editor_AHAP/"
