@@ -8,7 +8,7 @@
 # -----------------------------------------------------------
 
 $GITHUB_USERNAME = "sachi41999"       # e.g. "john-doe"
-$GITHUB_PAT      = "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" # e.g. "ghp_xxxxxxxxxxxx"
+$GITHUB_PAT      = "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" # e.g. "ghp_xxxxxxxxxxxx"
 $REPO_NAME       = "XML_File_Editor_AHAP"
 
 # -----------------------------------------------------------
