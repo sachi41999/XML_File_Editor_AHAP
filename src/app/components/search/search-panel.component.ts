@@ -58,10 +58,17 @@ import { ToastService } from '../../services/toast.service';
 
         <!-- Summary -->
         <div style="padding:6px 20px 8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          @if (query) {
+          @if (isSearching()) {
+            <span style="font-size:12px;color:var(--accent);">⏳ Searching...</span>
+          } @else if (query) {
             <span style="font-size:12px;color:var(--text2);">
-              <span style="color:var(--text)">{{ results().length }}</span>
-              result{{ results().length !== 1 ? 's' : '' }} &nbsp;·&nbsp;
+              @if (searchService.truncated()) {
+                <span style="color:#d29922;font-weight:600;">Showing {{ results().length }} of {{ searchService.totalMatches() }}</span>
+                <span>&nbsp;matches&nbsp;·&nbsp;</span>
+              } @else {
+                <span style="color:var(--text)">{{ results().length }}</span>
+                <span>&nbsp;result{{ results().length !== 1 ? 's' : '' }}&nbsp;·&nbsp;</span>
+              }
               <label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
                 <input type="checkbox" [checked]="allSelected()" (change)="toggleSelectAll($any($event.target).checked)"> Select all
               </label>
@@ -151,10 +158,34 @@ export class SearchPanelComponent {
     private toast: ToastService
   ) {}
 
+  private searchDebounce: ReturnType<typeof setTimeout> | null = null;
+  isSearching = signal(false);
+
   runSearch() {
-    this.searchService.search(this.query, {
-      tags: this.searchTags, attrs: this.searchAttrs, vals: this.searchVals, caseSensitive: this.caseSensitive
-    });
+    // Debounce: wait 350ms after user stops typing before running search
+    // This prevents UI freeze when typing in large XML documents
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+
+    // For empty queries, clear immediately (no need to wait)
+    if (!this.query || !this.query.trim()) {
+      this.searchService.clear();
+      this.isSearching.set(false);
+      return;
+    }
+
+    this.isSearching.set(true);
+    this.searchDebounce = setTimeout(() => {
+      // Defer to next macrotask so the browser can paint the "Searching..." state first
+      setTimeout(() => {
+        try {
+          this.searchService.search(this.query, {
+            tags: this.searchTags, attrs: this.searchAttrs, vals: this.searchVals, caseSensitive: this.caseSensitive
+          });
+        } finally {
+          this.isSearching.set(false);
+        }
+      }, 0);
+    }, 350);
   }
 
   close() { this.searchService.isOpen.set(false); this.searchService.clear(); }

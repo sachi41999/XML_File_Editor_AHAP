@@ -19,44 +19,84 @@ export class SearchService {
 
   constructor(private state: XmlStateService) {}
 
+  // Maximum number of results returned to keep UI responsive
+  // For documents with many matches, only first N are shown
+  static readonly MAX_RESULTS = 5000;
+  totalMatches = signal(0);
+  truncated = signal(false);
+
   search(q: string, opts: { tags: boolean; attrs: boolean; vals: boolean; caseSensitive: boolean }) {
     if (!this.state.xmlDoc || !q.trim()) {
       this.results.set([]);
       this.cursor.set(-1);
+      this.totalMatches.set(0);
+      this.truncated.set(false);
       return;
     }
     const needle = opts.caseSensitive ? q : q.toLowerCase();
     const found: SearchResult[] = [];
+    let totalCount = 0;
+    let stopWalking = false;
 
     const walk = (node: Element) => {
+      if (stopWalking) return;
       if (node.nodeType !== 1) return;
-      const path = this.state.getNodePath(node);
       const tag = node.tagName;
       const tagComp = opts.caseSensitive ? tag : tag.toLowerCase();
+      let path: string | null = null; // lazy compute path only if needed (expensive)
 
       if (opts.tags && tagComp.includes(needle)) {
-        found.push({ type: 'tag', path, tag, attrName: null, value: '', node });
+        totalCount++;
+        if (found.length < SearchService.MAX_RESULTS) {
+          path = path ?? this.state.getNodePath(node);
+          found.push({ type: 'tag', path, tag, attrName: null, value: '', node });
+        }
       }
-      Array.from(node.attributes).forEach(a => {
+      const attrs = node.attributes;
+      for (let i = 0; i < attrs.length; i++) {
+        const a = attrs[i];
         const attrComp = opts.caseSensitive ? a.name : a.name.toLowerCase();
         const valComp = opts.caseSensitive ? a.value : a.value.toLowerCase();
         if (opts.attrs && attrComp.includes(needle)) {
-          found.push({ type: 'attr', path, tag, attrName: a.name, value: a.value, node });
+          totalCount++;
+          if (found.length < SearchService.MAX_RESULTS) {
+            path = path ?? this.state.getNodePath(node);
+            found.push({ type: 'attr', path, tag, attrName: a.name, value: a.value, node });
+          }
         } else if (opts.vals && a.value && valComp.includes(needle)) {
-          found.push({ type: 'val', path, tag, attrName: a.name, value: a.value, node });
+          totalCount++;
+          if (found.length < SearchService.MAX_RESULTS) {
+            path = path ?? this.state.getNodePath(node);
+            found.push({ type: 'val', path, tag, attrName: a.name, value: a.value, node });
+          }
         }
-      });
+      }
       if (opts.vals && node.children.length === 0 && node.textContent?.trim()) {
         const tc = opts.caseSensitive ? node.textContent : node.textContent.toLowerCase();
         if (tc.includes(needle)) {
-          found.push({ type: 'text', path, tag, attrName: '#text', value: node.textContent ?? '', node });
+          totalCount++;
+          if (found.length < SearchService.MAX_RESULTS) {
+            path = path ?? this.state.getNodePath(node);
+            found.push({ type: 'text', path, tag, attrName: '#text', value: node.textContent ?? '', node });
+          }
         }
       }
-      Array.from(node.children).forEach(child => walk(child));
+      // Hard safety cap: if we've already counted way too many, stop walking
+      if (totalCount > SearchService.MAX_RESULTS * 2) {
+        stopWalking = true;
+        return;
+      }
+      const children = node.children;
+      for (let i = 0; i < children.length; i++) {
+        if (stopWalking) return;
+        walk(children[i]);
+      }
     };
 
     walk(this.state.xmlDoc.documentElement);
     this.results.set(found);
+    this.totalMatches.set(totalCount);
+    this.truncated.set(totalCount > found.length);
     this.cursor.set(found.length > 0 ? 0 : -1);
   }
 

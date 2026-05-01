@@ -25,8 +25,7 @@ export interface TreeNode {
       flex-direction: column;
       height: 100%;
       width: 280px;
-      min-width: 280px;
-      max-width: 280px;
+      min-width: 160px;
       flex-shrink: 0;
       overflow: hidden;
     }
@@ -34,6 +33,7 @@ export interface TreeNode {
       display: flex;
       flex-direction: column;
       height: 100%;
+      width: 100%;
       background: var(--surface);
       border-right: 1px solid var(--border);
       overflow: hidden;
@@ -49,6 +49,12 @@ export interface TreeNode {
       min-width: max-content;
       padding-right: 12px;
     }
+    /* Each row sized to its content so the widest row dictates the
+       horizontal scroll width of .tree-inner */
+    ::ng-deep .tree-scroll-body .tree-label {
+      width: max-content;
+      min-width: 100%;
+    }
   `],
   template: `
     <div id="xml-sidebar">
@@ -63,6 +69,12 @@ export interface TreeNode {
             <p>Load an XML file to see the tree</p>
           </div>
         } @else {
+          @if (truncated()) {
+            <div style="padding:8px 12px;margin:6px 8px;background:rgba(210,153,34,0.1);border:1px solid rgba(210,153,34,0.3);border-radius:4px;font-size:11px;color:#d29922;line-height:1.4;">
+              ⚠️ Tree truncated to {{ flatNodes().length }} visible rows.
+              Collapse some nodes or click on individual claims to navigate.
+            </div>
+          }
           <div class="tree-inner">
             @for (node of flatNodes(); track node.path) {
               <div class="tree-label"
@@ -103,26 +115,41 @@ export class TreeComponent implements OnInit {
     window.addEventListener('xml-tree-refresh', () => this.buildTree());
   }
 
+  // Maximum visible rows in the tree at any time — prevents DOM freeze on huge XMLs
+  static readonly MAX_VISIBLE_NODES = 3000;
+  truncated = signal(false);
+
   buildTree() {
-    if (!this.state.xmlDoc) { this.flatNodes.set([]); return; }
+    if (!this.state.xmlDoc) { this.flatNodes.set([]); this.truncated.set(false); return; }
     const root = this.state.xmlDoc.documentElement;
     this.state.expandedNodes.add(this.state.getNodePath(root));
-    this.flatNodes.set(this.flatten(root, 0));
+    const flat: TreeNode[] = [];
+    this.flattenInto(root, 0, flat);
+    if (flat.length >= TreeComponent.MAX_VISIBLE_NODES) {
+      this.truncated.set(true);
+    } else {
+      this.truncated.set(false);
+    }
+    this.flatNodes.set(flat);
   }
 
-  private flatten(node: Element, indent: number): TreeNode[] {
-    if (node.nodeType !== 1) return [];
-    const path = this.state.getNodePath(node);
-    const children = Array.from(node.children);
-    const isExpanded = this.state.expandedNodes.has(path);
-    const textContent = node.textContent?.trim() ?? '';
-    const textPreview = children.length === 0 && textContent
-      ? textContent.slice(0, 22) + (textContent.length > 22 ? '…' : '') : '';
+  private flattenInto(node: Element, indent: number, out: TreeNode[]): void {
+    if (node.nodeType !== 1) return;
+    if (out.length >= TreeComponent.MAX_VISIBLE_NODES) return; // hard cap to prevent freeze
 
-    // Show num_icn or acn_icn next to the tag name if present
+    const path = this.state.getNodePath(node);
+    const children = node.children;
+    const isExpanded = this.state.expandedNodes.has(path);
+
+    let textPreview = '';
+    if (children.length === 0) {
+      const tc = (node.textContent ?? '').trim();
+      if (tc) textPreview = tc.length > 22 ? tc.slice(0, 22) + '…' : tc;
+    }
+
     const icnLabel = node.getAttribute('num_icn') || node.getAttribute('acn_icn') || '';
 
-    const result: TreeNode[] = [{
+    out.push({
       tag: node.tagName, path, indent,
       hasChildren: children.length > 0,
       isExpanded,
@@ -130,12 +157,21 @@ export class TreeComponent implements OnInit {
       childCount: children.length,
       hasChanges: this.state.hasNodeChanges(path),
       icnLabel
-    }];
+    });
 
     if (children.length > 0 && isExpanded) {
-      children.forEach(child => result.push(...this.flatten(child, indent + 1)));
+      for (let i = 0; i < children.length; i++) {
+        if (out.length >= TreeComponent.MAX_VISIBLE_NODES) return;
+        this.flattenInto(children[i], indent + 1, out);
+      }
     }
-    return result;
+  }
+
+  // Old flatten kept for backwards compat (not used now)
+  private flatten(node: Element, indent: number): TreeNode[] {
+    const out: TreeNode[] = [];
+    this.flattenInto(node, indent, out);
+    return out;
   }
 
   toggleNode(e: Event, node: TreeNode) {
@@ -154,9 +190,38 @@ export class TreeComponent implements OnInit {
 
   expandAll() {
     if (!this.state.xmlDoc) return;
+
+    // Count total elements first to decide strategy
+    let totalCount = 0;
+    const countAll = (n: Element) => {
+      totalCount++;
+      const children = n.children;
+      for (let i = 0; i < children.length; i++) countAll(children[i]);
+    };
+    countAll(this.state.xmlDoc.documentElement);
+
+    // Hard limit: if document has more than 5000 elements, warn user instead of freezing
+    if (totalCount > 5000) {
+      const proceed = confirm(
+        `This document has ${totalCount.toLocaleString()} elements.\n\n` +
+        `Expanding all would freeze the browser. Only the first level (top-level Claims) will be expanded.\n\n` +
+        `Click on individual nodes to expand them as needed.`
+      );
+      // Just expand root + immediate children
+      const root = this.state.xmlDoc.documentElement;
+      this.state.expandedNodes.add(this.state.getNodePath(root));
+      Array.from(root.children).forEach(child => {
+        this.state.expandedNodes.add(this.state.getNodePath(child));
+      });
+      this.buildTree();
+      return;
+    }
+
+    // Safe to expand all — document is small enough
     const addAll = (n: Element) => {
       this.state.expandedNodes.add(this.state.getNodePath(n));
-      Array.from(n.children).forEach(addAll);
+      const children = n.children;
+      for (let i = 0; i < children.length; i++) addAll(children[i]);
     };
     addAll(this.state.xmlDoc.documentElement);
     this.buildTree();

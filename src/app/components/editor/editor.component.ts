@@ -356,11 +356,11 @@ export class EditorComponent {
     reader.readAsText(file);
   }
 
-  // Attributes that are restricted and cannot be modified
-  private readonly RESTRICTED_ATTRS = ['num_icn', 'acn_icn'];
-
+  // Restricted attributes are configured in public/validation-rules.json under
+  // the top-level "restrictedFields" array. To add or remove a restricted field,
+  // edit that JSON — no code changes needed.
   isRestrictedAttr(attrName: string): boolean {
-    return this.RESTRICTED_ATTRS.includes(attrName.toLowerCase());
+    return this.validationSvc.isRestricted(attrName);
   }
 
   onAttrChange(attr: AttrRow, newVal: string) {

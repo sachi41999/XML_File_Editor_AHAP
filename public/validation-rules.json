@@ -1,0 +1,204 @@
+{
+  "$schema": "Editable validation rules. To add a new validation, append a new rule object to the 'rules' array. No code changes required — restart or refresh the app.",
+
+  "supportedCheckTypes": [
+    "Note: 'restrictedFields' is a top-level array of attribute names that are read-only in the editor.",
+    "regex          — { type:'regex', pattern:'<regex>', message:'<msg>', flags?:'i' }",
+    "maxLength      — { type:'maxLength', value:<n> }",
+    "minLength      — { type:'minLength', value:<n> }",
+    "exactLength    — { type:'exactLength', value:<n> }",
+    "exactDigits    — { type:'exactDigits', value:<n> }    (n digits, numeric only)",
+    "digitsOnly     — { type:'digitsOnly' }",
+    "alphanumeric   — { type:'alphanumeric' }              (letters + digits only)",
+    "lettersOnly    — { type:'lettersOnly', allowSpaces?:true, allowHyphen?:true }",
+    "oneOf          — { type:'oneOf', values:['M','F','U'], caseSensitive?:false }",
+    "noChars        — { type:'noChars', chars:'-/', message?:'<msg>' }",
+    "dateYYYYMMDD   — { type:'dateYYYYMMDD', allowBlank?:true }",
+    "notFutureDate  — { type:'notFutureDate' }              (assumes YYYYMMDD)",
+    "notBeforeSibling     — { type:'notBeforeSibling', siblingFields:['dte_first_svc'], label:'Admit Date' }",
+    "notOnOrBeforeSibling — { type:'notOnOrBeforeSibling', siblingFields:['dob'], label:'Date of Birth' }"
+  ],
+
+  "restrictedFields": [
+    "num_icn",
+    "acn_icn"
+  ],
+
+  "rules": [
+    {
+      "name": "Name fields",
+      "fields": ["nam_first", "nam_last", "subscriberfirstname", "subscriberlastname",
+                 "medicaidmemberfirstname", "medicaidmemberlastname"],
+      "description": "Only letters, hyphens, and spaces. Max 60 characters.",
+      "checks": [
+        { "type": "maxLength", "value": 60 },
+        { "type": "lettersOnly", "allowSpaces": true, "allowHyphen": true }
+      ]
+    },
+
+    {
+      "name": "Date of Birth",
+      "fields": ["medicaidmemberdateofbirth", "subscriberdateofbirth", "dob", "dte_birth"],
+      "description": "Valid date in YYYYMMDD format, cannot be a future date.",
+      "checks": [
+        { "type": "dateYYYYMMDD" },
+        { "type": "notFutureDate", "label": "Date of Birth" }
+      ]
+    },
+
+    {
+      "name": "Policy / Member ID",
+      "fields": ["policyid", "subscriberid", "medicaidmemberid",
+                 "id_member", "id_subscriber", "id_policy"],
+      "description": "Alphanumeric only. Max 80 characters.",
+      "checks": [
+        { "type": "maxLength", "value": 80 },
+        { "type": "alphanumeric" }
+      ]
+    },
+
+    {
+      "name": "Address",
+      "fields": ["subscriberaddress", "medicaidmemberaddress",
+                 "adr_street", "adr_city", "adr_zip", "adr_state",
+                 "nam_street", "nam_city",
+                 "renderingprovideraddress", "adr_line1", "adr_line2"],
+      "description": "Alphanumeric, spaces, and basic punctuation. Max 55 characters per line.",
+      "checks": [
+        { "type": "maxLength", "value": 55 },
+        { "type": "regex",
+          "pattern": "^[a-zA-Z0-9 .,#\\-]+$",
+          "message": "Only alphanumeric characters, spaces, and basic punctuation allowed." }
+      ]
+    },
+
+    {
+      "name": "Discharge Date",
+      "fields": ["dischargedate", "dte_discharge"],
+      "description": "Valid date in YYYYMMDD format, must be on or after the Admit Date.",
+      "checks": [
+        { "type": "dateYYYYMMDD" },
+        { "type": "notBeforeSibling",
+          "siblingFields": ["dte_first_svc", "admitdate", "dte_admit"],
+          "label": "Admit Date",
+          "thisLabel": "Discharge Date" }
+      ]
+    },
+
+    {
+      "name": "NPI",
+      "fields": ["npi", "renderingprovidernpi", "attendingprovidernpi",
+                 "npi_rendering", "npi_attending", "id_npi", "npi_billing"],
+      "description": "Must be exactly 10 numeric digits.",
+      "checks": [
+        { "type": "exactDigits", "value": 10, "label": "NPI" }
+      ]
+    },
+
+    {
+      "name": "NDC",
+      "fields": ["ndc", "ndcinformation", "cde_ndc", "id_ndc"],
+      "description": "Must be exactly 11 numeric digits. No hyphens.",
+      "checks": [
+        { "type": "noChars", "chars": "-",
+          "message": "NDC must not contain hyphens. Use 11 digits only." },
+        { "type": "exactDigits", "value": 11, "label": "NDC" }
+      ]
+    },
+
+    {
+      "name": "Type of Bill",
+      "fields": ["tob", "typeofbill", "cde_tob", "cde_bill_type"],
+      "description": "Must be exactly 4 numeric characters.",
+      "checks": [
+        { "type": "exactDigits", "value": 4, "label": "Type of Bill" }
+      ]
+    },
+
+    {
+      "name": "Patient Relationship Code",
+      "fields": ["patientrelationshipcode", "cde_relationship", "cde_pat_rel", "cde_rel"],
+      "description": "Max 2 characters, numeric only.",
+      "checks": [
+        { "type": "regex", "pattern": "^\\d{1,2}$",
+          "message": "Patient Relationship Code must be 1-2 numeric digits." }
+      ]
+    },
+
+    {
+      "name": "Admit Date",
+      "fields": ["admitdate", "dte_admit", "dte_admission"],
+      "description": "Valid date in YYYYMMDD format, cannot be a future date.",
+      "checks": [
+        { "type": "dateYYYYMMDD" },
+        { "type": "notFutureDate", "label": "Admit Date" }
+      ]
+    },
+
+    {
+      "name": "Date of Death",
+      "fields": ["datedeath", "dte_death", "patientdateofdeath", "dte_dod"],
+      "description": "Valid YYYYMMDD or blank (if alive). Cannot be future. Must be after DOB.",
+      "checks": [
+        { "type": "dateYYYYMMDD", "allowBlank": true },
+        { "type": "notFutureDate", "label": "Date of Death" },
+        { "type": "notOnOrBeforeSibling",
+          "siblingFields": ["dob", "dte_birth", "medicaidmemberdateofbirth"],
+          "label": "Date of Birth",
+          "thisLabel": "Date of Death" }
+      ]
+    },
+
+    {
+      "name": "Patient Sex / Gender",
+      "fields": ["patientsex", "cde_sex", "cde_gender", "sex", "gender", "cde_pat_sex"],
+      "description": "Must be \"M\" (Male), \"F\" (Female), or \"U\" (Unknown).",
+      "checks": [
+        { "type": "oneOf", "values": ["M", "F", "U"], "caseSensitive": false,
+          "message": "Patient Sex must be \"M\" (Male), \"F\" (Female), or \"U\" (Unknown)." }
+      ]
+    },
+
+    {
+      "name": "Diagnosis Code",
+      "fields": ["admittingdiagnosiscode", "cde_diagnosis", "cde_diag",
+                 "cde_admitting_diag", "cde_admit_diag", "cde_primary_diag"],
+      "description": "Alphanumeric only. Max 7 characters.",
+      "checks": [
+        { "type": "maxLength", "value": 7 },
+        { "type": "alphanumeric" }
+      ]
+    },
+
+    {
+      "name": "Patient Discharge Status",
+      "fields": ["patientdischargestatus", "cde_discharge_status", "cde_pat_discharge",
+                 "cde_discharge", "cde_status_discharge"],
+      "description": "Max 2 characters, numeric only.",
+      "checks": [
+        { "type": "regex", "pattern": "^\\d{1,2}$",
+          "message": "Patient Discharge Status must be 1-2 numeric digits." }
+      ]
+    },
+
+    {
+      "name": "Procedure Code",
+      "fields": ["cde_proc", "procedure_code", "cde_procedure"],
+      "description": "Alphanumeric only. Max 5 characters.",
+      "checks": [
+        { "type": "maxLength", "value": 5 },
+        { "type": "alphanumeric" }
+      ]
+    },
+
+    {
+      "name": "Generic date fields",
+      "fields": ["dte_adjusted", "dte_prescription", "dte_service",
+                 "dte_svc_adjud", "dte_service_adjud", "dte_svc_adjud_dte"],
+      "description": "Valid date in YYYYMMDD format.",
+      "checks": [
+        { "type": "dateYYYYMMDD" }
+      ]
+    }
+  ]
+}

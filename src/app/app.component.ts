@@ -125,10 +125,16 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!handle) return;
     let dragging = false, startX = 0, startW = 0;
 
+    // Resize the <app-tree> host element so the entire tree column changes
+    // width — resizing only #xml-sidebar (an inner div) has no effect when
+    // the host has a fixed width.
+    const getTreeHost = (): HTMLElement | null =>
+      document.querySelector('app-tree') as HTMLElement | null;
+
     handle.addEventListener('mousedown', (e: MouseEvent) => {
       dragging = true; startX = e.clientX;
-      const sb = document.getElementById('xml-sidebar');
-      startW = sb ? sb.offsetWidth : 280;
+      const host = getTreeHost();
+      startW = host ? host.offsetWidth : 280;
       handle.classList.add('dragging');
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
@@ -137,9 +143,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
     document.addEventListener('mousemove', (e: MouseEvent) => {
       if (!dragging) return;
-      const newW = Math.max(160, Math.min(560, startW + (e.clientX - startX)));
-      const sb = document.getElementById('xml-sidebar') as HTMLElement;
-      if (sb) { sb.style.width = newW + 'px'; sb.style.minWidth = newW + 'px'; sb.style.maxWidth = newW + 'px'; }
+      const newW = Math.max(160, Math.min(700, startW + (e.clientX - startX)));
+      const host = getTreeHost();
+      if (host) {
+        host.style.width = newW + 'px';
+        host.style.flex = '0 0 ' + newW + 'px';
+      }
     });
 
     document.addEventListener('mouseup', () => {

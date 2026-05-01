@@ -96,43 +96,15 @@ export class TopbarComponent implements OnInit {
     this.toast.show('Reset complete');
   }
 
-  // Scan entire XML document for validation errors
+  // Scan the user's recorded changes for validation errors. Implementation
+  // lives in ValidationService.collectErrorsFromChanges() so the right-panel
+  // "Validation Errors" tab and this download check share one code path.
   private collectAllValidationErrors(): { field: string; path: string; message: string }[] {
     if (!this.state.xmlDoc) return [];
-    const errors: { field: string; path: string; message: string }[] = [];
-
-    // ONLY validate fields the user has actually changed — not the entire document
-    for (const change of this.state.changes) {
-      if (change.type === 'add-element') continue; // no value to validate
-
-      const node = this.state.getNodeByPath(change.path);
-      if (!node) continue;
-
-      if (change.type === 'text-content') {
-        // Validate the text content of the changed node
-        const currentVal = node.textContent ?? '';
-        const r = this.validationSvc.validate(node.tagName, currentVal);
-        if (r && !r.valid) {
-          errors.push({ field: node.tagName, path: change.path, message: r.message });
-        }
-
-      } else if (change.type === 'edit' || change.type === 'add-attr') {
-        // Validate the changed attribute value
-        const attrName = change.attrName!;
-        const currentVal = node.getAttribute(attrName) ?? change.newVal;
-
-        // Build sibling context for cross-field rules
-        const siblingValues: Record<string, string> = {};
-        Array.from(node.attributes).forEach(a => { siblingValues[a.name.toLowerCase()] = a.value; });
-
-        const r = this.validationSvc.validate(attrName, currentVal, { siblingValues });
-        if (r && !r.valid) {
-          errors.push({ field: attrName, path: change.path + ' @' + attrName, message: r.message });
-        }
-      }
-    }
-
-    return errors;
+    return this.validationSvc.collectErrorsFromChanges(
+      this.state.changes,
+      p => this.state.getNodeByPath(p)
+    );
   }
 
   async download() {
@@ -182,17 +154,19 @@ export class TopbarComponent implements OnInit {
       }
     }
 
-    // Strategy 2: Base64 data URI anchor download
+    // Strategy 2: Blob URL anchor download — handles arbitrary file sizes
     try {
-      const b64 = btoa(unescape(encodeURIComponent(content)));
-      const uri = 'data:application/xml;charset=utf-8;base64,' + b64;
+      const blob = new Blob([content], { type: 'application/xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = uri;
+      a.href = url;
       a.download = fileName;
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      // Release memory after a brief delay (allow download to start)
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       this.state.clearSavedSession();
       this.saveStatus.set('');
       this.toast.show('✅ Downloaded: ' + fileName, 'success');

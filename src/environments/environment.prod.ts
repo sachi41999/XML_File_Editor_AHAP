@@ -3,7 +3,7 @@ export const environment = {
 
   // ── Azure AD / MSAL Authentication ──────────────────────────────────────────
   // Auth is ENABLED in production — Azure AD SSO login is enforced
-  authEnabled: false,
+  authEnabled: true,
 
   // Your Azure AD App Registration values
   // Get these from: Azure Portal → Azure AD → App Registrations → Your App → Overview

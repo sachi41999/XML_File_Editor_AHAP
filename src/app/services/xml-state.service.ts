@@ -994,25 +994,40 @@ export class XmlStateService {
   serializeXML(): string {
     if (!this.xmlDoc) return '';
     const s = new XMLSerializer();
-    let content = s.serializeToString(this.xmlDoc);
+    const content = s.serializeToString(this.xmlDoc);
+    // For very large documents, skip pretty-formatting to avoid RangeError
+    // The XML is still valid, just less readable
+    if (content.length > 5_000_000) {
+      console.warn('[XML] Document too large for pretty-formatting (' + content.length + ' chars). Returning compact XML.');
+      return '<?xml version="1.0" encoding="UTF-8"?>\n' + content;
+    }
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + this.formatXML(content);
   }
 
   formatXML(xml: string): string {
-    let formatted = '';
+    // Use array.push + join instead of string concatenation
+    // String concat in a loop on very large XMLs causes RangeError: Invalid string length
+    const parts: string[] = [];
     let indent = 0;
     const lines = xml.replace(/>\s*</g, '>\n<').split('\n');
-    lines.forEach(line => {
-      line = line.trim();
-      if (!line) return;
+    const indentCache: string[] = [''];
+    const getIndent = (n: number) => {
+      while (indentCache.length <= n) indentCache.push(indentCache[indentCache.length - 1] + '  ');
+      return indentCache[n];
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
       if (line.startsWith('</')) indent = Math.max(0, indent - 1);
-      formatted += '  '.repeat(indent) + line + '\n';
+      parts.push(getIndent(indent));
+      parts.push(line);
+      parts.push('\n');
       if (!line.startsWith('</') && !line.endsWith('/>') &&
           line.startsWith('<') && !line.startsWith('<?') && !line.startsWith('<!--')) {
         indent++;
       }
-    });
-    return formatted;
+    }
+    return parts.join('');
   }
 
   syntaxHighlight(xml: string): string {

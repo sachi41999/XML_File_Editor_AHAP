@@ -2,8 +2,9 @@ import { Component, signal, OnInit, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { XmlStateService, XmlChange } from '../../services/xml-state.service';
 import { EditorService } from '../editor/editor.service';
+import { ValidationService, ValidationError } from '../../services/validation.service';
 
-type Tab = 'preview' | 'changes' | 'schema';
+type Tab = 'preview' | 'changes' | 'schema' | 'errors';
 
 @Component({
   selector: 'app-right-panel',
@@ -16,6 +17,9 @@ type Tab = 'preview' | 'changes' | 'schema';
         @for (tab of tabs; track tab.id) {
           <div class="panel-tab" [class.active]="activeTab() === tab.id" (click)="switchTab(tab.id)">
             {{ tab.label }}
+            @if (tab.id === 'errors' && validationErrors().length > 0) {
+              <span class="tab-count-badge tab-count-errors">{{ validationErrors().length }}</span>
+            }
           </div>
         }
       </div>
@@ -66,6 +70,37 @@ type Tab = 'preview' | 'changes' | 'schema';
           }
         }
 
+        <!-- ERRORS TAB -->
+        @if (activeTab() === 'errors') {
+          @if (validationErrors().length === 0) {
+            <div class="empty-state">
+              <div class="icon">✓</div>
+              <p>No validation errors</p>
+              <p style="font-size:11px;color:var(--text3);margin-top:4px;">
+                All changed fields pass their configured rules.
+              </p>
+            </div>
+          } @else {
+            <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-family:'IBM Plex Mono',monospace;">
+              {{ validationErrors().length }} error(s) — click any item to jump to the field.
+            </div>
+            @for (e of validationErrors(); track $index) {
+              <div class="error-item"
+                   (click)="navigateToError(e)"
+                   title="Click to open in editor">
+                <div class="error-item-header">
+                  <span class="error-field">{{ e.field }}</span>
+                  <span class="badge type-badge type-error">{{ e.kind === 'attr' ? 'ATTR' : 'TEXT' }}</span>
+                </div>
+                <div class="error-message">⚠ {{ e.message }}</div>
+                <div class="error-path">
+                  {{ state.formatPathDisplay(e.kind === 'attr' ? e.path + ' @' + e.attrName : e.path) }}
+                </div>
+              </div>
+            }
+          }
+        }
+
         <!-- SCHEMA TAB -->
         @if (activeTab() === 'schema') {
           @if (!state.xsdDoc) {
@@ -95,14 +130,22 @@ export class RightPanelComponent implements OnInit {
   previewHtml = signal('');
   schemaItems = signal<{ name: string; attrs: string[] }[]>([]);
   changeCount = signal(0);
+  /** Live list of validation errors driven by the current state.changes.
+   *  Recomputed whenever the user edits or reverts a change. */
+  validationErrors = signal<ValidationError[]>([]);
 
   tabs = [
     { id: 'preview' as Tab, label: 'Preview' },
     { id: 'changes' as Tab, label: 'Changes' },
-    { id: 'schema' as Tab, label: 'Schema' }
+    { id: 'errors'  as Tab, label: 'Errors'  },
+    { id: 'schema'  as Tab, label: 'Schema'  }
   ];
 
-  constructor(public state: XmlStateService, private editorService: EditorService) {
+  constructor(
+    public state: XmlStateService,
+    private editorService: EditorService,
+    private validationSvc: ValidationService
+  ) {
     effect(() => {
       const _ = this.editorService.selectedPath();
       if (this.activeTab() === 'preview') this.updatePreview();
@@ -110,8 +153,19 @@ export class RightPanelComponent implements OnInit {
     effect(() => {
       const _ = this.editorService.refreshTrigger();
       this.changeCount.set(this.state.changes.length);
+      this.recomputeErrors();
       if (this.activeTab() === 'preview') this.updatePreview();
     });
+  }
+
+  /** Re-run validation on every recorded change and update the errors signal. */
+  private recomputeErrors(): void {
+    if (!this.state.xmlDoc) { this.validationErrors.set([]); return; }
+    const errs = this.validationSvc.collectErrorsFromChanges(
+      this.state.changes,
+      p => this.state.getNodeByPath(p)
+    );
+    this.validationErrors.set(errs);
   }
 
   ngOnInit() {
@@ -119,14 +173,17 @@ export class RightPanelComponent implements OnInit {
       this.updatePreview();
       this.buildSchema();
       this.changeCount.set(0);
+      this.validationErrors.set([]);
     });
     window.addEventListener('xml-reset', () => {
       this.previewHtml.set('');
       this.schemaItems.set([]);
       this.changeCount.set(0);
+      this.validationErrors.set([]);
     });
     window.addEventListener('xml-changes-updated', () => {
       this.changeCount.set(this.state.changes.length);
+      this.recomputeErrors();
       if (this.activeTab() === 'preview') this.updatePreview();
     });
   }
@@ -165,6 +222,22 @@ export class RightPanelComponent implements OnInit {
     this.editorService.selectNode(targetPath);
 
     // Refresh tree and preview
+    window.dispatchEvent(new Event('xml-tree-refresh'));
+    window.dispatchEvent(new Event('xml-changes-updated'));
+  }
+
+  /** Open the node that owns this validation error and let the user fix it.
+   *  Same pattern as navigateToChange — expand ancestors, select, open in editor. */
+  navigateToError(e: ValidationError) {
+    const targetPath = e.path;
+    const parts = targetPath.split('/');
+    let accumulated = '';
+    parts.forEach(part => {
+      accumulated = accumulated ? accumulated + '/' + part : part;
+      this.state.expandedNodes.add(accumulated);
+    });
+    this.state.selectedPath = targetPath;
+    this.editorService.selectNode(targetPath);
     window.dispatchEvent(new Event('xml-tree-refresh'));
     window.dispatchEvent(new Event('xml-changes-updated'));
   }
